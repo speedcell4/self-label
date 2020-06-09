@@ -5,6 +5,5 @@
 # LICENSE file in the root directory of this source tree.
 #
 from .alexnet import *
-from .resnetv2 import *
 from .resnetv1 import *
-
+from .resnetv2 import *

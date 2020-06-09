@@ -9,9 +9,9 @@ EXP='./eval/alexnet'
 mkdir -p ${EXP}
 
 python3 eval_linear_probes.py \
-            --arch=${ARCH} \
-            --modelpath=${CKPT}\
-            --datadir=${DIR}\
-            --ckpt-dir=${EXP}/checkpoints-eval \
-            --name=${EXP}-evallinear \
-            --device=${DEVICE}
+  --arch=${ARCH} \
+  --modelpath=${CKPT} \
+  --datadir=${DIR} \
+  --ckpt-dir=${EXP}/checkpoints-eval \
+  --name=${EXP}-evallinear \
+  --device=${DEVICE}

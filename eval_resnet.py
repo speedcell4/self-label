@@ -1,24 +1,24 @@
+import argparse
 import os
 import time
-import argparse
-import warnings
-
 import torch
 import torch.nn as nn
+import warnings
 from tensorboardX import SummaryWriter
 
-import util
-import files
 import data
+import files
+import util
 from util import TotalAverage, MovingAverage, accuracy
 
 warnings.simplefilter("ignore", UserWarning)
+
 
 class StandardOptimizer():
     def __init__(self, weight_decay=1e-4):
         self.num_epochs = 40
         self.lr = 0.1
-        self.lr_schedule = lambda epoch : self.lr * (0.95 ** (epoch))
+        self.lr_schedule = lambda epoch: self.lr * (0.95 ** (epoch))
         self.criterion = nn.CrossEntropyLoss()
         self.momentum = 0.9
         self.weight_decay = weight_decay
@@ -32,7 +32,7 @@ class StandardOptimizer():
         """Perform full optimization."""
         # Initialize
         criterion = self.criterion
-        metrics = {'train':[], 'val':[]}
+        metrics = {'train': [], 'val': []}
         first_epoch = 0
 
         # Send models to device
@@ -60,7 +60,7 @@ class StandardOptimizer():
                             metrics["val"].append(m)
                 files.save_checkpoint(self.checkpoint_dir, model, optimizer, metrics, epoch)
                 if epoch in [84, 126]:
-                    files.save_checkpoint(self.checkpoint_dir, model, optimizer, metrics, epoch,defsave=True)
+                    files.save_checkpoint(self.checkpoint_dir, model, optimizer, metrics, epoch, defsave=True)
         else:
             print('only evaluating!', flush=True)
             with torch.no_grad():
@@ -71,13 +71,11 @@ class StandardOptimizer():
 
         return model, metrics
 
-
     def get_optimizer(self, model):
         return torch.optim.SGD(filter(lambda p: p.requires_grad, model.top_layer.parameters()),
                                lr=self.lr_schedule(0),
                                momentum=self.momentum,
                                weight_decay=self.weight_decay)
-
 
     def optimize_epoch(self, model, criterion, optimizer, loader, epoch, is_validation=False):
         top1 = []
@@ -129,10 +127,10 @@ class StandardOptimizer():
 
             batch_time.update(time.time() - now)
             now = time.time()
-            if iter % 50 == 0 :
+            if iter % 50 == 0:
                 print(f"{'V' if is_validation else 'T'} Loss: {loss_value[0].avg:03.3f} "
                       f"Top1: {top1[0].avg:03.1f} Top5: {top5[0].avg:03.1f} "
-                      f"{epoch: 3}/{iter:05}/{l_dl:05} Freq: {mass/batch_time.avg:04.1f}Hz:",
+                      f"{epoch: 3}/{iter:05}/{l_dl:05} Freq: {mass / batch_time.avg:04.1f}Hz:",
                       end='\r', flush=True
                       )
         if is_validation:
@@ -143,12 +141,11 @@ class StandardOptimizer():
             str_ = 'LP/val' if is_validation else 'LP/train'
             self.writer.add_scalar(f'{str_}/top1', top1[0].avg, epoch)
             self.writer.add_scalar(f'{str_}/top5', top5[0].avg, epoch)
-            self.writer.add_scalar(f'{str_}/Freq', mass/batch_time.avg, epoch)
+            self.writer.add_scalar(f'{str_}/Freq', mass / batch_time.avg, epoch)
 
         return {"loss": [x.avg for x in loss_value],
                 "top1": [x.avg for x in top1],
                 "top5": [x.avg for x in top1]}
-
 
 
 def get_parser():
@@ -168,8 +165,8 @@ def get_parser():
 
     # other
     parser.add_argument('--ckpt-dir', default='.test', metavar='DIR', help='path to result dirs')
-    parser.add_argument('--datadir', default='/home/ubuntu/data/imagenet', type=str,help='')
-    parser.add_argument('--modelpath', default='./checkpoint999.pth', type=str,help='')
+    parser.add_argument('--datadir', default='/home/ubuntu/data/imagenet', type=str, help='')
+    parser.add_argument('--modelpath', default='./checkpoint999.pth', type=str, help='')
     parser.add_argument('--name', default='test', type=str, help='comment for tensorboardX')
     parser.add_argument('--evaluate', dest='evaluate', action='store_true', help='evaluate only')
     return parser
@@ -184,7 +181,7 @@ if __name__ == "__main__":
     util.prepmodel(model, args.modelpath)
 
     name = "%s" % args.name.replace('/', '_')
-    writer = SummaryWriter('./eval/%s'%name)
+    writer = SummaryWriter('./eval/%s' % name)
     writer.add_text('args', " \n".join(['%s %s' % (arg, getattr(args, arg)) for arg in vars(args)]))
     # Setup dataset
     train_loader, val_loader = data.get_standard_data_loader_pairs(dir_path=args.datadir,
@@ -193,15 +190,19 @@ if __name__ == "__main__":
     print("LENDATA:", len(train_loader.dataset), flush=True)
     # Setup optimizer
     o = StandardOptimizer(weight_decay=0)
+
+
     def lr_schedule(epoch):
         if epoch < 85:
             return args.learning_rate
         elif epoch < 128:
-            return args.learning_rate/10.
+            return args.learning_rate / 10.
         else:
-            return args.learning_rate/100.
+            return args.learning_rate / 100.
+
+
     print(model.top_layer, flush=True)
-    o.lr_schedule = lambda epoch:  lr_schedule(epoch)
+    o.lr_schedule = lambda epoch: lr_schedule(epoch)
     o.writer = writer
     o.resume = True
     o.lr = args.learning_rate
@@ -211,4 +212,3 @@ if __name__ == "__main__":
 
     # Optimize
     o.optimize(model, train_loader, val_loader)
-

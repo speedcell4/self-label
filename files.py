@@ -1,5 +1,5 @@
-import os
 import glob
+import os
 import torch
 
 
@@ -8,14 +8,17 @@ def xmkdir(path):
     if path is not None and not os.path.exists(path):
         os.makedirs(path)
 
+
 def get_model_device(model):
     return next(model.parameters()).device
+
 
 def save_model(model, model_path):
     """Save the model state dictionary to the PTH file model_path."""
     if model_path is not None:
         xmkdir(os.path.dirname(model_path))
         torch.save(model.state_dict(), model_path)
+
 
 def load_checkpoint(checkpoint_dir, model, optimizer=None):
     """Search the latest checkpoint in checkpoint_dir and load the model and optimizer and return the metrics."""
@@ -64,7 +67,7 @@ def save_checkpoint(checkpoint_dir, model, optimizer, metrics, epoch, defsave=Fa
                 'epoch': epoch + 1,
                 'metrics': metrics,
                 'model': model.state_dict(),
-                'optimizer' : optimizer.state_dict(),
+                'optimizer': optimizer.state_dict(),
             }, name)
             clean_checkpoint(checkpoint_dir)
         else:
@@ -144,7 +147,7 @@ def load_checkpoint_all(checkpoint_dir, model, opt):
                 name = k.replace('module.', '')  # remove `module.`
                 new_state_dict[name] = v
             model.load_state_dict(new_state_dict)
-            print('loaded from parallel to single!',flush=True)
+            print('loaded from parallel to single!', flush=True)
         else:
             model.load_state_dict(cp['state_dict'])
 

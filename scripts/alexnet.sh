@@ -23,15 +23,15 @@ EXP=./${folder}
 mkdir -p ${EXP}/checkpoints/L
 
 python3 main.py \
-        --device ${device} \
-        --imagenet-path ${DIR} \
-        --exp ${EXP} \
-        --batch-size ${BS} \
-        --augs ${AUG} \
-        --epochs ${NEP} \
-        --nopts ${nopts} \
-        --hc ${HC} \
-        --arch ${ARCH} \
-        --ncl ${NCL} \
-        --workers ${WORKERS} \
-        --comment ${EXP}  | tee -a ${EXP}/log.txt;
+  --device ${device} \
+  --imagenet-path ${DIR} \
+  --exp ${EXP} \
+  --batch-size ${BS} \
+  --augs ${AUG} \
+  --epochs ${NEP} \
+  --nopts ${nopts} \
+  --hc ${HC} \
+  --arch ${ARCH} \
+  --ncl ${NCL} \
+  --workers ${WORKERS} \
+  --comment ${EXP} | tee -a ${EXP}/log.txt

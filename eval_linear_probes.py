@@ -2,45 +2,45 @@
 https://github.com/yukimasano/linear-probes 
 """
 
-import time
-import os
-from functools import reduce
-import math
-import warnings
 import argparse
-
+import math
+import os
+import time
 import torch
 import torch.nn as nn
+import warnings
+from functools import reduce
 from tensorboardX import SummaryWriter
 
-import util
-import models
 import files
-from util import TotalAverage, MovingAverage,accuracy
-from data import get_standard_data_loader_pairs,get_standard_data_loader
+import models
+import util
+from data import get_standard_data_loader_pairs, get_standard_data_loader
+from util import TotalAverage, MovingAverage, accuracy
 
 warnings.simplefilter("ignore", UserWarning)
 
 
 class Probes(nn.Module):
     """Linear probing container."""
+
     def __init__(self, trunk, probed_layers, num_classes=1000):
         super(Probes, self).__init__()
-        x = torch.zeros(2,3,224,224)
+        x = torch.zeros(2, 3, 224, 224)
         num_classes = num_classes
         n_lin = 9200
         cnvs = [
-                nn.MaxPool2d(6, stride=6, padding=3),
-                nn.MaxPool2d(4, stride=4, padding=0),
-                nn.MaxPool2d(3, stride=3, padding=1),
-                nn.MaxPool2d(3, stride=3, padding=1),
-                nn.MaxPool2d(2, stride=2, padding=0)]
+            nn.MaxPool2d(6, stride=6, padding=3),
+            nn.MaxPool2d(4, stride=4, padding=0),
+            nn.MaxPool2d(3, stride=3, padding=1),
+            nn.MaxPool2d(3, stride=3, padding=1),
+            nn.MaxPool2d(2, stride=2, padding=0)]
         # sizess = [9600, 9216, 9600, 9600,9216]
         self.probed_layers = probed_layers
         self.trunk = trunk
         self.probes = nn.ModuleList()
         self.deepest_layer_index = 0
-        j=0
+        j = 0
         layer_list = self.trunk.modules()
         for index, (name) in enumerate(list(layer_list)[0].children()):  # named_children
             x = name.forward(x)
@@ -51,8 +51,8 @@ class Probes(nn.Module):
                 self.deepest_layer_index = index
                 # Downsampler
                 x_volume = reduce(lambda x, y: x * y, x.shape[1:])
-                downsampler = cnvs[j] #
-                j+=1
+                downsampler = cnvs[j]  #
+                j += 1
                 y = downsampler(x)
                 y_volume = reduce(lambda x, y: x * y, y.shape[1:])
 
@@ -86,12 +86,12 @@ class Probes(nn.Module):
         return self.probes.parameters()
 
 
-def model_with_probes(model_path=None,which='Imagenet'):
+def model_with_probes(model_path=None, which='Imagenet'):
     if which == 'Imagenet':
         nc = 1000
     elif which == 'Places':
         nc = 205
-    state_dict = torch.load(model_path) # ['state_dict']
+    state_dict = torch.load(model_path)  # ['state_dict']
     ncls = []
     for q in (state_dict.keys()):
         if 'top_layer' in q:
@@ -114,6 +114,7 @@ class LinearProbesOptimizer():
     def __init__(self):
         self.num_epochs = 36
         self.lr = 0.01
+
         def zheng_lr_schedule(epoch):
             if epoch < 10:
                 return 1e-2
@@ -123,6 +124,7 @@ class LinearProbesOptimizer():
                 return 1e-4
             else:
                 return 1e-5
+
         self.lr_schedule = lambda epoch: zheng_lr_schedule(epoch)
         self.criterion = nn.CrossEntropyLoss()
         self.momentum = 0.9
@@ -137,7 +139,7 @@ class LinearProbesOptimizer():
         """Perform full optimization."""
         # Initialize
         criterion = self.criterion
-        metrics = {'train':[], 'val':[]}
+        metrics = {'train': [], 'val': []}
         first_epoch = 0
         model_path = None
 
@@ -156,10 +158,10 @@ class LinearProbesOptimizer():
                 first_epoch, metrics = files.load_checkpoint(self.checkpoint_dir, model, optimizer)
 
         print(f"{self.__class__.__name__}:"
-            f" epochs:{self.num_epochs}"
-            f" momentum:{self.momentum}"
-            f" weight_decay:{self.weight_decay}"
-            f" nesterov:{self.nesterov}")
+              f" epochs:{self.num_epochs}"
+              f" momentum:{self.momentum}"
+              f" weight_decay:{self.weight_decay}"
+              f" nesterov:{self.nesterov}")
 
         # Perform epochs
         if not self.validate_only:
@@ -184,7 +186,7 @@ class LinearProbesOptimizer():
         return model, metrics
 
     def get_optimizer(self, model):
-        return torch.optim.SGD(model.lp_parameters(), # <- all lp_parameters!
+        return torch.optim.SGD(model.lp_parameters(),  # <- all lp_parameters!
                                lr=self.lr_schedule(0),
                                momentum=self.momentum,
                                weight_decay=self.weight_decay,
@@ -214,7 +216,7 @@ class LinearProbesOptimizer():
             label = label.to('cuda:0')
             mass = input.size(0)
             total_loss = None
-            if args.data in ['Imagenet','Places'] and is_validation and args.tencrops:
+            if args.data in ['Imagenet', 'Places'] and is_validation and args.tencrops:
                 bs, ncrops, c, h, w = input.size()
                 input_tensor = input.view(-1, c, h, w)
                 input = input_tensor.cuda()
@@ -222,7 +224,7 @@ class LinearProbesOptimizer():
                 input = input.cuda()
 
             predictions = model(input)
-            if args.data in ['Imagenet','Places']  and is_validation and args.tencrops:
+            if args.data in ['Imagenet', 'Places'] and is_validation and args.tencrops:
                 predictions = [torch.squeeze(p.view(bs, ncrops, -1).mean(1)) for p in predictions]
             for i, prediction in enumerate(predictions):
                 loss = criterion(prediction, label)
@@ -245,13 +247,13 @@ class LinearProbesOptimizer():
 
         top1_str = 'top1 val' if is_validation else 'top1 train'
         top5_str = 'top5 val' if is_validation else 'top5 train'
-        writer.add_scalars(top1_str, {f"depth_{k+1}":top1[k].avg for k in range(len(model.probes))}, epoch)
-        writer.add_scalars(top5_str, {f"depth_{k+1}":top5[k].avg for k in range(len(model.probes))}, epoch)
-        writer.add_scalars('losses', {f"depth_{k+1}": loss_value[k].avg for k in range(len(model.probes))}, epoch)
+        writer.add_scalars(top1_str, {f"depth_{k + 1}": top1[k].avg for k in range(len(model.probes))}, epoch)
+        writer.add_scalars(top5_str, {f"depth_{k + 1}": top5[k].avg for k in range(len(model.probes))}, epoch)
+        writer.add_scalars('losses', {f"depth_{k + 1}": loss_value[k].avg for k in range(len(model.probes))}, epoch)
         if is_validation:
             print('VAL:')
             for i in range(len(model.probes)):
-                print(f" [{i}] t1:{top1[i].avg:04.2f} loss:{loss_value[i].avg:.2f}",end='')
+                print(f" [{i}] t1:{top1[i].avg:04.2f} loss:{loss_value[i].avg:.2f}", end='')
             print()
         else:
             print('TRAIN:')
@@ -260,8 +262,8 @@ class LinearProbesOptimizer():
             print()
 
         return {"loss": [x.avg for x in loss_value],
-            "top1": [x.avg for x in top1],
-            "top5": [x.avg for x in top5]}
+                "top1": [x.avg for x in top1],
+                "top5": [x.avg for x in top5]}
 
 
 def get_parser():
@@ -272,7 +274,7 @@ def get_parser():
     parser.add_argument('--ckpt-dir', default='./test', metavar='DIR', help='path to checkpoints')
 
     parser.add_argument('--device', default="1", type=str, metavar='d', help='GPU device')
-    parser.add_argument('--modelpath',default='.ckpt400.pth',type=str, help='path to model')
+    parser.add_argument('--modelpath', default='.ckpt400.pth', type=str, help='path to model')
     parser.add_argument('--results', default='', metavar='DIR', help='path to result dirs')
     parser.add_argument('-j', '--workers', default=6, type=int, metavar='N', help='number of data loading workers')
 
@@ -293,7 +295,7 @@ def get_parser():
 if __name__ == "__main__":
     args = get_parser().parse_args()
     # Setup CUDA and random seeds
-    print("="*60)
+    print("=" * 60)
     print()
     util.setup_runtime(seed=2, cuda_dev_id=args.device)
 
@@ -301,7 +303,6 @@ if __name__ == "__main__":
     name = args.name.replace('/', '_')
     writer = SummaryWriter('./runs_LP/%s/%s' % (args.data, name))
     writer.add_text('args', " \n".join(['%s %s' % (arg, getattr(args, arg)) for arg in vars(args)]))
-
 
     model = model_with_probes(model_path=args.modelpath, which=args.data)
     train_loader, val_loader = get_standard_data_loader_pairs(dir_path=args.datadir,

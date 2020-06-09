@@ -1,18 +1,19 @@
+import math
 import os
 import random
-import math
-import numpy as np
-from scipy.special import logsumexp
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.init as init
-
+from scipy.special import logsumexp
 from torch.nn import ModuleList
 from torchvision.utils import make_grid
 
+
 class AverageMeter(object):
     """Computes and stores the average and current value"""
+
     def __init__(self):
         self.reset()
 
@@ -29,9 +30,11 @@ class AverageMeter(object):
         self.avg = self.sum / self.count
 
 
-def setup_runtime(seed=0, cuda_dev_id=[0]):
+def setup_runtime(seed=0, cuda_dev_id=None):
     """Initialize CUDA, CuDNN and the random seeds."""
     # Setup CUDA
+    if cuda_dev_id is None:
+        cuda_dev_id = [0]
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     if len(cuda_dev_id) == 1:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(cuda_dev_id[0])
@@ -45,13 +48,14 @@ def setup_runtime(seed=0, cuda_dev_id=[0]):
     if torch.cuda.is_available():
         torch.backends.cudnn.enabled = True
         torch.backends.cudnn.benchmark = True
-        torch.backends.cudnn.deterministic = False 
-    # Fix random seeds
+        torch.backends.cudnn.deterministic = False
+        # Fix random seeds
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
 
 class TotalAverage():
     def __init__(self):
@@ -97,6 +101,7 @@ def accuracy(output, target, topk=(1,)):
             correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
             res.append(correct_k.mul_(100.0 / batch_size))
         return res
+
 
 def write_conv(writer, model, epoch, sobel=False):
     if not sobel:
@@ -160,7 +165,7 @@ def search_absorb_bn(model):
     prev = None
     for m in model.children():
         if is_bn(m) and is_absorbing(prev):
-            print("absorbing",m)
+            print("absorbing", m)
             absorb_bn(prev, m)
         search_absorb_bn(m)
         prev = m
@@ -168,6 +173,7 @@ def search_absorb_bn(model):
 
 class View(nn.Module):
     """A shape adaptation layer to patch certain networks."""
+
     def __init__(self):
         super(View, self).__init__()
 
@@ -190,6 +196,7 @@ def py_softmax(x, axis=None):
     """stable softmax"""
     return np.exp(x - logsumexp(x, axis=axis, keepdims=True))
 
+
 def warmup_batchnorm(model, data_loader, device, batches=100):
     """
     Run some batches through all parts of the model to warmup the running
@@ -202,6 +209,7 @@ def warmup_batchnorm(model, data_loader, device, batches=100):
             break
         images = images.to(device)
         _ = model(images)
+
 
 def init_pytorch_defaults(m, version='041'):
     '''
@@ -262,11 +270,11 @@ def init_pytorch_defaults(m, version='041'):
 
 
 def weight_init(m):
-    '''
+    """
     Usage:
         model = Model()
         model.apply(weight_init)
-    '''
+    """
     if isinstance(m, nn.Linear):
         init_pytorch_defaults(m, version='041')
     elif isinstance(m, nn.Conv2d):
@@ -289,7 +297,7 @@ def weight_init(m):
             init.normal_(m.bias.data)
 
 
-def search_set_bn_eval(model,toeval):
+def search_set_bn_eval(model, toeval):
     for m in model.children():
         if isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.BatchNorm1d):
             if toeval:
@@ -297,6 +305,7 @@ def search_set_bn_eval(model,toeval):
             else:
                 m.train()
         search_set_bn_eval(m, toeval)
+
 
 def prepmodel(model, modelpath):
     dat = torch.load(modelpath, map_location=lambda storage, loc: storage)  # ['model']
@@ -312,7 +321,7 @@ def prepmodel(model, modelpath):
 
     if model.headcount > 1:
         for i in range(model.headcount):
-            setattr(model, "top_layer%d" % i, None)
+            setattr(model, f"top_layer{i:d}", None)
 
     model.top_layer = nn.Sequential(nn.Linear(2048, 1000))
     model.headcount = 1

@@ -1,7 +1,8 @@
-import torch.nn as nn
 import math
+import torch.nn as nn
 
-__all__ = ['resnetv1','resnetv1_18']
+__all__ = ['resnetv1', 'resnetv1_18']
+
 
 def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
@@ -99,21 +100,21 @@ class ResNet(nn.Module):
         self.headcount = len(num_classes)
         self.base = int(64 * width)
         self.features = nn.Sequential(*[
-                            nn.Conv2d(in_channel, 64, kernel_size=7, stride=2, padding=3, bias=False),
-                            nn.BatchNorm2d(64),
-                            nn.ReLU(inplace=True),
-                            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
-                            self._make_layer(block, self.base, layers[0]),
-                            self._make_layer(block, self.base * 2, layers[1], stride=2),
-                            self._make_layer(block, self.base * 4, layers[2], stride=2),
-                            self._make_layer(block, self.base * 8, layers[3], stride=2),
-                            nn.AvgPool2d(7, stride=1),
+            nn.Conv2d(in_channel, 64, kernel_size=7, stride=2, padding=3, bias=False),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
+            self._make_layer(block, self.base, layers[0]),
+            self._make_layer(block, self.base * 2, layers[1], stride=2),
+            self._make_layer(block, self.base * 4, layers[2], stride=2),
+            self._make_layer(block, self.base * 8, layers[3], stride=2),
+            nn.AvgPool2d(7, stride=1),
         ])
         if len(num_classes) == 1:
-            self.top_layer = nn.Sequential(nn.Linear(512*4, num_classes[0]))
+            self.top_layer = nn.Sequential(nn.Linear(512 * 4, num_classes[0]))
         else:
             for a, i in enumerate(num_classes):
-                setattr(self, "top_layer%d" % a, nn.Linear(512*4, i))
+                setattr(self, "top_layer%d" % a, nn.Linear(512 * 4, i))
             self.top_layer = None
 
         for m in self.features.modules():
@@ -181,6 +182,7 @@ def resnet50(pretrained=False, **kwargs):
     model = ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
     return model
 
+
 def resnet101(pretrained=False, **kwargs):
     """Constructs a ResNet-101 model.
     Args:
@@ -189,15 +191,19 @@ def resnet101(pretrained=False, **kwargs):
     model = ResNet(Bottleneck, [3, 4, 23, 3], **kwargs)
     return model
 
+
 def resnetv1(num_classes=[1000]):
     """Encoder for instance discrimination and MoCo"""
     return resnet50(num_classes=num_classes)
+
 
 def resnetv1_18(num_classes=[1000]):
     """Encoder for instance discrimination and MoCo"""
     return resnet18(num_classes=num_classes)
 
+
 if __name__ == '__main__':
     import torch
-    model = resnetv1(num_classes=[500]*3)
-    print([ k.shape for k in model(torch.randn(64,3,224,224))])
+
+    model = resnetv1(num_classes=[500] * 3)
+    print([k.shape for k in model(torch.randn(64, 3, 224, 224))])

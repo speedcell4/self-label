@@ -1,10 +1,12 @@
+import time
+
+import numpy as np
 import torch
 import torch.nn as nn
-import time
-import numpy as np
 
-from util import  py_softmax,MovingAverage
 from multigpu import gpu_mul_Ax, gpu_mul_xA, aggreg_multi_gpu, gpu_mul_AB
+from util import py_softmax, MovingAverage
+
 
 def cpu_sk(self):
     """ Sinkhorn Knopp optimization on CPU
@@ -45,8 +47,8 @@ def cpu_sk(self):
         optimize_L_sk(self, nh=0)
     else:
         for nh in range(self.hc):
-            print("computing head %s " % nh, end="\r", flush=True)
-            tl = getattr(self.model, "top_layer%d" % nh)
+            print(f"computing head {nh} ", end="\r", flush=True)
+            tl = getattr(self.model, f"top_layer{nh:d}")
             time_mat = time.time()
 
             # clear memory
@@ -58,10 +60,11 @@ def cpu_sk(self):
             # apply last FC layer (a matmul and adding of bias)
             self.PS = (self.PS_pre @ tl.weight.cpu().numpy().T.astype(self.dtype)
                        + tl.bias.cpu().numpy().astype(self.dtype))
-            print(f"matmul took {(time.time() - time_mat)/60:.2f}min", flush=True)
+            print(f"matmul took {(time.time() - time_mat) / 60:.2f}min", flush=True)
             self.PS = py_softmax(self.PS, 1)
             optimize_L_sk(self, nh=nh)
     return
+
 
 def gpu_sk(self):
     """ Sinkhorn Knopp optimization on GPU
@@ -77,7 +80,7 @@ def gpu_sk(self):
                                             hc=self.hc, dim=self.outs[0], TYPE=self.dtype)
 
     else:
-        try: # just in case stuff
+        try:  # just in case stuff
             del self.PS_pre
         except:
             pass
@@ -86,14 +89,14 @@ def gpu_sk(self):
         self.PS_pre, indices = aggreg_multi_gpu(self.model, self.pseudo_loader,
                                                 hc=self.hc, dim=self.presize, TYPE=torch.float32)
         self.model.headcount = self.hc
-    print("Aggreg of outputs  took {0:.2f} min".format((time.time() - start_t) / 60.), flush=True)
+    print(f"Aggreg of outputs  took {(time.time() - start_t) / 60.:.2f} min", flush=True)
     # 2. solve label assignment via sinkhorn-knopp:
     if self.hc == 1:
         optimize_L_sk_multi(self, nh=0)
-        self.L[0,indices] = self.L[0,:]
+        self.L[0, indices] = self.L[0, :]
     else:
         for nh in range(self.hc):
-            tl = getattr(self.model, "top_layer%d" % nh)
+            tl = getattr(self.model, f"top_layer{nh:d}")
             time_mat = time.time()
             try:
                 del self.PS
@@ -104,24 +107,25 @@ def gpu_sk(self):
             # apply last FC layer (a matmul and adding of bias)
             self.PS = gpu_mul_AB(self.PS_pre, tl.weight.t(),
                                  c=tl.bias, dim=self.outs[nh], TYPE=self.dtype)
-            print("matmul took %smin" % ((time.time() - time_mat) / 60.), flush=True)
+            print(f"matmul took {(time.time() - time_mat) / 60.}min", flush=True)
             optimize_L_sk_multi(self, nh=nh)
             self.L[nh][indices] = self.L[nh]
     return
 
+
 def optimize_L_sk(self, nh=0):
     N = max(self.L.size())
     tt = time.time()
-    self.PS = self.PS.T # now it is K x N
+    self.PS = self.PS.T  # now it is K x N
     r = np.ones((self.outs[nh], 1), dtype=self.dtype) / self.outs[nh]
     c = np.ones((N, 1), dtype=self.dtype) / N
     self.PS **= self.lamb  # K x N
-    inv_K = self.dtype(1./self.outs[nh])
-    inv_N = self.dtype(1./N)
+    inv_K = self.dtype(1. / self.outs[nh])
+    inv_N = self.dtype(1. / N)
     err = 1e6
     _counter = 0
     while err > 1e-1:
-        r = inv_K / (self.PS @ c)          # (KxN)@(N,1) = K x 1
+        r = inv_K / (self.PS @ c)  # (KxN)@(N,1) = K x 1
         c_new = inv_N / (r.T @ self.PS).T  # ((1,K)@(KxN)).t() = N x 1
         if _counter % 10 == 0:
             err = np.nansum(np.abs(c / c_new - 1))
@@ -133,10 +137,11 @@ def optimize_L_sk(self, nh=0):
     self.PS = self.PS.T
     self.PS *= np.squeeze(r)
     self.PS = self.PS.T
-    argmaxes = np.nanargmax(self.PS, 0) # size N
+    argmaxes = np.nanargmax(self.PS, 0)  # size N
     newL = torch.LongTensor(argmaxes)
     self.L[nh] = newL.to(self.dev)
     print('opt took {0:.2f}min, {1:4d}iters'.format(((time.time() - tt) / 60.), _counter), flush=True)
+
 
 def optimize_L_sk_multi(self, nh=0):
     """ optimizes label assignment via Sinkhorn-Knopp.
@@ -186,7 +191,6 @@ def optimize_L_sk_multi(self, nh=0):
         argmaxes[start_idx:start_idx + len(qq)].copy_(amax)
         start_idx += len(qq)
     newL = argmaxes
-    print('opt took {0:.2f}min, {1:4d}iters'.format(((time.time() - tt) / 60.), _counter), flush=True)
+    print(f'opt took {((time.time() - tt) / 60.):.2f}min, {_counter:4d}iters', flush=True)
     # finally, assign the new labels ########################
     self.L[nh] = newL
-

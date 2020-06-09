@@ -11,11 +11,11 @@ EXP='./eval/resnet'
 mkdir -p ${EXP}
 
 python3 eval_resnet.py \
-            --hc ${HC} \
-            --ncl ${NCL} \
-            --arch=${ARCH} \
-            --modelpath=${CKPT}\
-            --datadir=${DIR}\
-            --ckpt-dir=${EXP}/checkpoints-eval \
-            --name=${EXP}-evallinear \
-            --device=${DEVICE}
+  --hc ${HC} \
+  --ncl ${NCL} \
+  --arch=${ARCH} \
+  --modelpath=${CKPT} \
+  --datadir=${DIR} \
+  --ckpt-dir=${EXP}/checkpoints-eval \
+  --name=${EXP}-evallinear \
+  --device=${DEVICE}
