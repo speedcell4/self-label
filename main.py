@@ -104,16 +104,15 @@ class Optimizer:
             data = 0
 
             # some logging stuff ##############################################################
-            if iter % args.log_iter == 0:
-                if self.writer:
-                    self.writer.add_scalar('lr', self.lr_schedule(epoch), niter)
+            if iter % args.log_iter == 0 and self.writer:
+                self.writer.add_scalar('lr', self.lr_schedule(epoch), niter)
 
-                    print(niter, " Loss: {0:.3f}".format(loss.item()), flush=True)
-                    print(niter, " Freq: {0:.2f}".format(mass / (time.time() - now)), flush=True)
-                    if writer:
-                        self.writer.add_scalar('Loss', loss.item(), niter)
-                        if iter > 0:
-                            self.writer.add_scalar('Freq(Hz)', mass / (time.time() - now), niter)
+                print(niter, f" Loss: {loss.item():.3f}", flush=True)
+                print(niter, f" Freq: {mass / (time.time() - now):.2f}", flush=True)
+                if writer:
+                    self.writer.add_scalar('Loss', loss.item(), niter)
+                    if iter > 0:
+                        self.writer.add_scalar('Freq(Hz)', mass / (time.time() - now), niter)
 
         # end of epoch logging ################################################################
         if self.writer and (epoch % args.log_intv == 0):

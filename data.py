@@ -1,10 +1,11 @@
 import os
+
 import torch
+import torch.utils.data
 import torchvision
 import torchvision.transforms as tfs
 
 import models
-import util
 
 
 class DataSet(torch.utils.data.Dataset):
@@ -23,14 +24,16 @@ class DataSet(torch.utils.data.Dataset):
 
 def get_aug_dataloader(image_dir, is_validation=False,
                        batch_size=256, image_size=256, crop_size=224,
-                       mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225],
+                       mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225),
                        num_workers=8,
                        augs=1, shuffle=True):
-    print(image_dir)
+    print(f'image_dir => {image_dir}')
     if image_dir is None:
         return None
 
-    print("imagesize: ", image_size, "cropsize: ", crop_size)
+    print(f'image_size => {image_size}')
+    print(f'crop_size => {crop_size}')
+
     normalize = tfs.Normalize(mean=mean, std=std)
     if augs == 0:
         _transforms = tfs.Compose([
@@ -64,12 +67,15 @@ def get_aug_dataloader(image_dir, is_validation=False,
             tfs.ToTensor(),
             normalize
         ])
+    else:
+        raise NotImplementedError
 
     if is_validation:
         dataset = DataSet(torchvision.datasets.ImageFolder(image_dir + '/val', _transforms))
     else:
         dataset = DataSet(torchvision.datasets.ImageFolder(image_dir + '/train', _transforms))
-    loader = torch.utils.data.DataLoader(
+
+    return torch.utils.data.DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
@@ -77,7 +83,6 @@ def get_aug_dataloader(image_dir, is_validation=False,
         pin_memory=True,
         drop_last=False
     )
-    return loader
 
 
 def return_model_loader(args, return_loader=True):
@@ -101,7 +106,7 @@ def return_model_loader(args, return_loader=True):
 
 def get_standard_data_loader(image_dir, is_validation=False,
                              batch_size=192, image_size=256, crop_size=224,
-                             mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225],
+                             mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225),
                              num_workers=8, no_random_crops=False, tencrops=True):
     """Get a standard data loader for evaluating AlexNet representations in a standard way.
     """
@@ -142,7 +147,7 @@ def get_standard_data_loader(image_dir, is_validation=False,
 
     dataset = torchvision.datasets.ImageFolder(image_dir, transforms)
 
-    loader = torch.utils.data.DataLoader(
+    return torch.utils.data.DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=not is_validation,
@@ -150,7 +155,6 @@ def get_standard_data_loader(image_dir, is_validation=False,
         pin_memory=True,
         sampler=None
     )
-    return loader
 
 
 def get_standard_data_loader_pairs(dir_path, **kargs):
