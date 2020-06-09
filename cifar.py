@@ -1,18 +1,20 @@
-'''Train CIFAR10 with PyTorch.
+"""Train CIFAR10 with PyTorch.
 mostly from  https://github.com/zhirongw/lemniscate.pytorch/blob/master/cifar.py, AET
-'''
+"""
 from __future__ import print_function
 
 import argparse
-import numpy as np
 import os
 import sys
 import time
+
+import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
+import torch.utils.data
 import torchvision.transforms as tfs
 from tensorboardX import SummaryWriter
+from torch import optim
 
 import models
 from cifar_utils import kNN, CIFAR10Instance, CIFAR100Instance
@@ -50,7 +52,8 @@ def optimize_L_sk(PS):
             err = np.nansum(np.abs(c / c_new - 1))
         c = c_new
         _counter += 1
-    print("error: ", err, 'step ', _counter, flush=True)  # " nonneg: ", sum(I), flush=True)
+    print(f'err => {err}')
+    print(f'_counter => {_counter}')
     # inplace calculations.
     PS *= np.squeeze(c)
     PS = PS.T
@@ -67,7 +70,7 @@ def optimize_L_sk(PS):
     np.log(sol, sol)
     cost = -(1. / args.lamb) * np.nansum(sol) / N
     print('cost: ', cost, flush=True)
-    print('opt took {0:.2f}min, {1:4d}iters'.format(((time.time() - tt) / 60.), _counter), flush=True)
+    print(f'opt took {((time.time() - tt) / 60.):.2f}min, {_counter:4d}iters', flush=True)
     return cost, selflabels
 
 
@@ -91,8 +94,8 @@ def opt_sk(model, selflabels_in, epoch):
         _nmis = np.zeros(args.hc)
         _costs = np.zeros(args.hc)
         nh = epoch % args.hc  # np.random.randint(args.hc)
-        print("computing head %s " % nh, end="\r", flush=True)
-        tl = getattr(model, "top_layer%d" % nh)
+        print(f"computing head {nh} ", end="\r", flush=True)
+        tl = getattr(model, f"top_layer{nh:d}")
         # do the forward pass:
         PS = (PS_pre @ tl.weight.cpu().numpy().T
               + tl.bias.cpu().numpy())
@@ -231,9 +234,9 @@ if args.test_only:
     acc = kNN(model, trainloader, testloader, K=[200, 50, 10, 5, 1], sigma=[0.1, 0.5], dim=knn_dim, use_pca=usepca)
     sys.exit(0)
 
-name = "%s" % args.exp.replace('/', '_')
+name = f"{args.exp.replace('/', '_')}"
 writer = SummaryWriter(f'./runs/cifar{args.type}/{name}')
-writer.add_text('args', " \n".join(['%s %s' % (arg, getattr(args, arg)) for arg in vars(args)]))
+writer.add_text('args', " \n".join([f'{arg} {getattr(args, arg)}' for arg in vars(args)]))
 
 
 def adjust_learning_rate(optimizer, epoch):
@@ -272,7 +275,7 @@ def adjust_learning_rate(optimizer, epoch):
 
 # Training
 def train(epoch, selflabels):
-    print('\nEpoch: %d' % epoch)
+    print(f'\nEpoch: {epoch:d}')
     print(name)
     adjust_learning_rate(optimizer, epoch)
     train_loss = AverageMeter()
@@ -340,7 +343,7 @@ for epoch in range(start_epoch, start_epoch + args.epochs):
         }
         if not os.path.isdir(args.exp):
             os.mkdir(args.exp)
-        torch.save(state, '%s/best_ckpt.t7' % (args.exp))
+        torch.save(state, f'{args.exp}/best_ckpt.t7')
         best_acc = acc
     if epoch % 100 == 0:
         print('Saving..')
@@ -353,7 +356,7 @@ for epoch in range(start_epoch, start_epoch + args.epochs):
         }
         if not os.path.isdir(args.exp):
             os.mkdir(args.exp)
-        torch.save(state, '%s/ep%s.t7' % (args.exp, epoch))
+        torch.save(state, f'{args.exp}/ep{epoch}.t7')
     if epoch % 50 == 0:
         feature_return_switch(model, True)
         acc = kNN(model, trainloader, testloader, K=[50, 10],
@@ -361,10 +364,10 @@ for epoch in range(start_epoch, start_epoch + args.epochs):
         i = 0
         for num_nn in [50, 10]:
             for sig in [0.1, 0.5]:
-                writer.add_scalar('knn%s-%s' % (num_nn, sig), acc[i], epoch)
+                writer.add_scalar(f'knn{num_nn}-{sig}', acc[i], epoch)
                 i += 1
         feature_return_switch(model, False)
-    print('best accuracy: {:.2f}'.format(best_acc * 100))
+    print(f'best accuracy: {best_acc * 100:.2f}')
 
 checkpoint = torch.load('%s' % args.exp + '/best_ckpt.t7')
 model.load_state_dict(checkpoint['net'])
