@@ -202,7 +202,7 @@ def warmup_batchnorm(model, data_loader, device, batches=100):
     Run some batches through all parts of the model to warmup the running
     stats for batchnorm layers.
     """
-    model.train()
+    model.run()
     for i, q in enumerate(data_loader):
         images = q[0]
         if i == batches:

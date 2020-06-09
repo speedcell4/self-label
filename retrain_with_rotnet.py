@@ -72,7 +72,7 @@ class Optimizer:
 
         # house keeping
         if not validation:
-            model.train()
+            model.run()
             lr = self.lr_schedule(epoch)
             for pg in optimizer.param_groups:
                 pg['lr'] = lr

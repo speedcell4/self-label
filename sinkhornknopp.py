@@ -16,8 +16,8 @@ def cpu_sk(self):
     """
     # 1. aggregate inputs:
     N = len(self.pseudo_loader.dataset)
-    if self.hc == 1:
-        self.PS = np.zeros((N, self.K), dtype=self.dtype)
+    if self.num_heads == 1:
+        self.PS = np.zeros((N, self.num_clusters_per_head), dtype=self.dtype)
     else:
         self.PS_pre = np.zeros((N, self.presize), dtype=self.dtype)
     now = time.time()
@@ -26,9 +26,9 @@ def cpu_sk(self):
     batch_time = MovingAverage(intertia=0.9)
     self.model.headcount = 1
     for batch_idx, (data, _, _selected) in enumerate(self.pseudo_loader):
-        data = data.to(self.dev)
+        data = data.to(self.device)
         mass = data.size(0)
-        if self.hc == 1:
+        if self.num_heads == 1:
             p = nn.functional.softmax(self.model(data), 1)
             self.PS[_selected, :] = p.detach().cpu().numpy().astype(self.dtype)
         else:
@@ -39,14 +39,14 @@ def cpu_sk(self):
         if batch_idx % 50 == 0:
             print(f"Aggregating batch {batch_idx:03}/{l_dl}, speed: {mass / batch_time.avg:04.1f}Hz",
                   end='\r', flush=True)
-    self.model.headcount = self.hc
+    self.model.headcount = self.num_heads
     print("Aggreg of outputs  took {0:.2f} min".format((time.time() - now) / 60.), flush=True)
 
     # 2. solve label assignment via sinkhorn-knopp:
-    if self.hc == 1:
+    if self.num_heads == 1:
         optimize_L_sk(self, nh=0)
     else:
-        for nh in range(self.hc):
+        for nh in range(self.num_heads):
             print(f"computing head {nh} ", end="\r", flush=True)
             tl = getattr(self.model, f"top_layer{nh:d}")
             time_mat = time.time()
@@ -74,10 +74,10 @@ def gpu_sk(self):
             * due to multi-GPU use, it's a bit harder to understand what's happening -> see CPU variant to understand
     """
     # 1. aggregate inputs:
-    start_t = time.time()
-    if self.hc == 1:
+    start_tm = time.time()
+    if self.num_heads == 1:
         self.PS, indices = aggreg_multi_gpu(self.model, self.pseudo_loader,
-                                            hc=self.hc, dim=self.outs[0], TYPE=self.dtype)
+                                            hc=self.num_heads, dim=self.outs[0], TYPE=self.dtype)
 
     else:
         try:  # just in case stuff
@@ -87,15 +87,15 @@ def gpu_sk(self):
         torch.cuda.empty_cache()
         time.sleep(1)
         self.PS_pre, indices = aggreg_multi_gpu(self.model, self.pseudo_loader,
-                                                hc=self.hc, dim=self.presize, TYPE=torch.float32)
-        self.model.headcount = self.hc
-    print(f"Aggreg of outputs  took {(time.time() - start_t) / 60.:.2f} min", flush=True)
+                                                hc=self.num_heads, dim=self.presize, TYPE=torch.float32)
+        self.model.headcount = self.num_heads
+    print(f"Aggregate of outputs  took {(time.time() - start_tm) / 60.:.2f} min", flush=True)
     # 2. solve label assignment via sinkhorn-knopp:
-    if self.hc == 1:
+    if self.num_heads == 1:
         optimize_L_sk_multi(self, nh=0)
         self.L[0, indices] = self.L[0, :]
     else:
-        for nh in range(self.hc):
+        for nh in range(self.num_heads):
             tl = getattr(self.model, f"top_layer{nh:d}")
             time_mat = time.time()
             try:
@@ -139,7 +139,7 @@ def optimize_L_sk(self, nh=0):
     self.PS = self.PS.T
     argmaxes = np.nanargmax(self.PS, 0)  # size N
     newL = torch.LongTensor(argmaxes)
-    self.L[nh] = newL.to(self.dev)
+    self.L[nh] = newL.to(self.device)
     print('opt took {0:.2f}min, {1:4d}iters'.format(((time.time() - tt) / 60.), _counter), flush=True)
 
 

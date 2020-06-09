@@ -10,7 +10,7 @@ import warnings
 
 try:
     from tensorboardX import SummaryWriter
-except:
+except ImportError:
     pass
 
 import files
@@ -21,8 +21,9 @@ from data import return_model_loader
 warnings.simplefilter("ignore", UserWarning)
 
 
-class Optimizer:
-    def __init__(self, m, hc, ncl, t_loader, n_epochs, lr, weight_decay=1e-5, ckpt_dir='/'):
+class Trainer:
+    def __init__(self, m, num_heads, num_clusters_per_head, train_loader, n_epochs, lr, weight_decay=1e-5,
+                 ckpt_dir='/'):
         self.num_epochs = n_epochs
         self.lr = lr
         self.lr_schedule = lambda epoch: ((epoch < 350) * (self.lr * (0.1 ** (epoch // args.lrdrop)))
@@ -37,21 +38,21 @@ class Optimizer:
         self.writer = None
 
         # model stuff
-        self.hc = hc
-        self.K = ncl
+        self.num_heads = num_heads
+        self.num_clusters_per_head = num_clusters_per_head
         self.model = m
-        self.dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.nmodel_gpus = len(args.modeldevice)
-        self.pseudo_loader = t_loader  # can also be DataLoader with less aug.
-        self.train_loader = t_loader
+        self.pseudo_loader = train_loader  # can also be DataLoader with less aug.
+        self.train_loader = train_loader
         self.lamb = args.lamb  # the parameter lambda in the SK algorithm
         self.dtype = torch.float64 if not args.cpu else np.float64
 
-        self.outs = [self.K] * args.hc
+        self.outs = [self.num_clusters_per_head] * args.hc
         # activations of previous to last layer to be saved if using multiple heads.
         self.presize = 4096 if args.arch == 'alexnet' else 2048
 
-    def optimize_labels(self, niter):
+    def update_assignment(self, niter):
         if not args.cpu and torch.cuda.device_count() > 1:
             sk.gpu_sk(self)
         else:
@@ -64,39 +65,42 @@ class Optimizer:
         # free memory
         self.PS = 0
 
-    def optimize_epoch(self, optimizer, loader, epoch, validation=False):
+    def train_on_epoch(self, optimizer, loader, epoch, validation=False):
         print(f"Starting epoch {epoch}, validation: {validation} " + "=" * 30, flush=True)
 
         loss_value = util.AverageMeter()
         # house keeping
-        self.model.train()
+        self.model.run()
         if self.lr_schedule(epoch + 1) != self.lr_schedule(epoch):
-            files.save_checkpoint_all(self.checkpoint_dir, self.model, args.arch,
-                                      optimizer, self.L, epoch, lowest=False, save_str='pre-lr-drop')
+            files.save_checkpoint_all(
+                self.checkpoint_dir, self.model, args.arch,
+                optimizer, self.L, epoch, lowest=False, save_str='pre-lr-drop')
         lr = self.lr_schedule(epoch)
         for pg in optimizer.param_groups:
             pg['lr'] = lr
-        XE = torch.nn.CrossEntropyLoss()
-        for iter, (data, label, selected) in enumerate(loader):
-            now = time.time()
-            niter = epoch * len(loader) + iter
+        criterion_fn = torch.nn.CrossEntropyLoss()
+        for index, (data, label, selected) in enumerate(loader):
+            start_tm = time.time()
+            global_step = epoch * len(loader) + index
 
-            if niter * args.batch_size >= self.optimize_times[-1]:
-                ############ optimize labels #########################################
+            if global_step * args.batch_size >= self.optimize_times[-1]:
+                # optimize labels #########################################
                 self.model.headcount = 1
                 print('Optimizaton starting', flush=True)
                 with torch.no_grad():
                     _ = self.optimize_times.pop()
-                    self.optimize_labels(niter)
-            data = data.to(self.dev)
+                    self.update_assignment(global_step)
+            data = data.to(self.device)
             mass = data.size(0)
-            final = self.model(data)
-            #################### train CNN ####################################################
-            if self.hc == 1:
-                loss = XE(final, self.L[0, selected])
+            outputs = self.model(data)
+            # train CNN ####################################################
+            if self.num_heads == 1:
+                loss = criterion_fn(outputs, self.L[0, selected])
             else:
-                loss = torch.mean(torch.stack([XE(final[h],
-                                                  self.L[h, selected]) for h in range(self.hc)]))
+                loss = torch.mean(torch.stack([
+                    criterion_fn(outputs[head_index], self.L[head_index, selected]) for head_index in
+                    range(self.num_heads)]
+                ))
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -104,41 +108,40 @@ class Optimizer:
             data = 0
 
             # some logging stuff ##############################################################
-            if iter % args.log_iter == 0 and self.writer:
-                self.writer.add_scalar('lr', self.lr_schedule(epoch), niter)
+            if index % args.log_iter == 0 and self.writer:
+                self.writer.add_scalar('lr', self.lr_schedule(epoch), global_step)
 
-                print(niter, f" Loss: {loss.item():.3f}", flush=True)
-                print(niter, f" Freq: {mass / (time.time() - now):.2f}", flush=True)
+                print(global_step, f" Loss: {loss.item():.3f}", flush=True)
+                print(global_step, f" Freq: {mass / (time.time() - start_tm):.2f}", flush=True)
                 if writer:
-                    self.writer.add_scalar('Loss', loss.item(), niter)
-                    if iter > 0:
-                        self.writer.add_scalar('Freq(Hz)', mass / (time.time() - now), niter)
+                    self.writer.add_scalar('Loss', loss.item(), global_step)
+                    if index > 0:
+                        self.writer.add_scalar('Freq(Hz)', mass / (time.time() - start_tm), global_step)
 
         # end of epoch logging ################################################################
         if self.writer and (epoch % args.log_intv == 0):
             util.write_conv(self.writer, self.model, epoch=epoch)
 
-        files.save_checkpoint_all(self.checkpoint_dir, self.model, args.arch,
-                                  optimizer, self.L, epoch, lowest=False)
+        files.save_checkpoint_all(self.checkpoint_dir, self.model, args.arch, optimizer, self.L, epoch, lowest=False)
 
         return {'loss': loss_value.avg}
 
-    def optimize(self):
+    def run(self):
         """Perform full optimization."""
         first_epoch = 0
-        self.model = self.model.to(self.dev)
+        self.model = self.model.to(self.device)
         N = len(self.pseudo_loader.dataset)
         # optimization times (spread exponentially), can also just be linear in practice (i.e. every n-th epoch)
         self.optimize_times = [(self.num_epochs + 2) * N] + \
                               ((self.num_epochs + 1.01) * N * (np.linspace(0, 1, args.nopts) ** 2)[::-1]).tolist()
 
-        optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, self.model.parameters()),
-                                    weight_decay=self.weight_decay,
-                                    momentum=self.momentum,
-                                    lr=self.lr)
+        sgd = torch.optim.SGD(filter(lambda p: p.requires_grad, self.model.parameters()),
+                              weight_decay=self.weight_decay,
+                              momentum=self.momentum,
+                              lr=self.lr)
 
         if self.checkpoint_dir is not None and self.resume:
-            self.L, first_epoch = files.load_checkpoint_all(self.checkpoint_dir, self.model, optimizer)
+            self.L, first_epoch = files.load_checkpoint_all(self.checkpoint_dir, self.model, sgd)
             print('found first epoch to be', first_epoch, flush=True)
             include = [(qq / N >= first_epoch) for qq in self.optimize_times]
             self.optimize_times = (np.array(self.optimize_times)[include]).tolist()
@@ -146,30 +149,30 @@ class Optimizer:
 
         if first_epoch == 0:
             # initiate labels as shuffled.
-            self.L = np.zeros((self.hc, N), dtype=np.int32)
-            for nh in range(self.hc):
-                for _i in range(N):
-                    self.L[nh, _i] = _i % self.outs[nh]
-                self.L[nh] = np.random.permutation(self.L[nh])
-            self.L = torch.LongTensor(self.L).to(self.dev)
+            self.L = np.zeros((self.num_heads, N), dtype=np.int32)
+            for head_idex in range(self.num_heads):
+                for index in range(N):
+                    self.L[head_idex, index] = index % self.outs[head_idex]
+                self.L[head_idex] = np.random.permutation(self.L[head_idex])
+            self.L = torch.LongTensor(self.L).to(self.device)
 
         # Perform optmization ###############################################################
         lowest_loss = 1e9
         epoch = first_epoch
         while epoch < (self.num_epochs + 1):
-            m = self.optimize_epoch(optimizer, self.train_loader, epoch,
+            m = self.train_on_epoch(sgd, self.train_loader, epoch,
                                     validation=False)
             if m['loss'] < lowest_loss:
                 lowest_loss = m['loss']
                 files.save_checkpoint_all(self.checkpoint_dir, self.model, args.arch,
-                                          optimizer, self.L, epoch, lowest=True)
+                                          sgd, self.L, epoch, lowest=True)
             epoch += 1
         print(f"optimization completed. Saving model to {os.path.join(self.checkpoint_dir, 'model_final.pth.tar')}")
         torch.save(self.model, os.path.join(self.checkpoint_dir, 'model_final.pth.tar'))
         return self.model
 
 
-def get_parser():
+def build_argument_parser():
     parser = argparse.ArgumentParser(description='PyTorch Implementation of Self-Label')
     # optimizer
     parser.add_argument('--epochs', default=200, type=int, help='number of epochs')
@@ -206,21 +209,20 @@ def get_parser():
 
 
 if __name__ == "__main__":
-    args = get_parser()
-    name = "%s" % args.comment.replace('/', '_')
+    args = build_argument_parser()
+    name = f'{args.comment.replace("/", "_")}'
     try:
         args.device = [int(item) for item in args.device.split(',')]
     except AttributeError:
         args.device = [int(args.device)]
     args.modeldevice = args.device
     util.setup_runtime(seed=42, cuda_dev_id=list(np.unique(args.modeldevice + args.device)))
-    print(args, flush=True)
-    print()
-    print(name, flush=True)
+    print(f'args => {args}')
+    print(f'name => {name}')
     time.sleep(5)
 
-    writer = SummaryWriter('./runs/%s' % name)
-    writer.add_text('args', " \n".join(['%s %s' % (arg, getattr(args, arg)) for arg in vars(args)]))
+    writer = SummaryWriter(f'./runs/{name}')
+    writer.add_text('args', " \n".join([f'{arg} {getattr(args, arg)}' for arg in vars(args)]))
 
     # Setup model and train_loader
     model, train_loader = return_model_loader(args)
@@ -234,9 +236,9 @@ if __name__ == "__main__":
             model.features = nn.DataParallel(model.features,
                                              device_ids=list(range(len(args.modeldevice))))
     # Setup optimizer
-    o = Optimizer(m=model, hc=args.hc, ncl=args.ncl, t_loader=train_loader,
-                  n_epochs=args.epochs, lr=args.lr, weight_decay=10 ** args.wd,
-                  ckpt_dir=os.path.join(args.exp, 'checkpoints'))
-    o.writer = writer
+    trainer = Trainer(m=model, num_heads=args.hc, num_clusters_per_head=args.ncl, train_loader=train_loader,
+                      n_epochs=args.epochs, lr=args.lr, weight_decay=10 ** args.wd,
+                      ckpt_dir=os.path.join(args.exp, 'checkpoints'))
+    trainer.writer = writer
     # Optimize
-    o.optimize()
+    trainer.run()

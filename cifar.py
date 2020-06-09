@@ -283,7 +283,7 @@ def train(epoch, selflabels):
     batch_time = AverageMeter()
 
     # switch to train mode
-    model.train()
+    model.run()
 
     end = time.time()
 

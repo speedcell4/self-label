@@ -86,7 +86,7 @@ def get_aug_dataloader(image_dir, is_validation=False,
 
 
 def return_model_loader(args, return_loader=True):
-    outs = [args.ncl] * args.hc
+    outs = [args.ncl] * args.num_heads
     assert args.arch in ['alexnet', 'resnetv2', 'resnetv1']
     if args.arch == 'alexnet':
         model = models.__dict__[args.arch](num_classes=outs)

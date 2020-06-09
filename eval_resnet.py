@@ -88,7 +88,7 @@ class StandardOptimizer():
         now = time.time()
 
         if is_validation is False:
-            model.train()
+            model.run()
             lr = self.lr_schedule(epoch)
             for pg in optimizer.param_groups:
                 pg['lr'] = lr
